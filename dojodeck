@@ -22,6 +22,7 @@ RUNTIME="$HERE/runtime"
 LOVE="$RUNTIME/AppRun"
 LIST="/tmp/dojodeck.list"
 OUT="/tmp/dojodeck.out"
+PLAYED="$HERE/lastplayed.tsv"   # slug<TAB>epoch, most-recent-first menu sort
 REEXECS="${DOJODECK_REEXECS:-0}"   # guard against pathological re-exec loops
 
 LOVE_URL="https://github.com/love2d/love/releases/download/11.5/love-11.5-x86_64.AppImage"
@@ -68,15 +69,30 @@ sync_games() {
   done < "$MANIFEST"
 }
 
+# last-opened bookkeeping (so the menu sorts most-recently-played first)
+played_ts() {  # echo epoch for a slug, or 0
+  awk -F'\t' -v s="$1" '$1==s{v=$2} END{print v+0}' "$PLAYED" 2>/dev/null || echo 0
+}
+record_played() {
+  local s="$1" now tmp; now="$(date +%s)"; tmp="$PLAYED.tmp"
+  if [ -f "$PLAYED" ]; then awk -F'\t' -v s="$s" '$1!=s' "$PLAYED" > "$tmp"; else : > "$tmp"; fi
+  printf '%s\t%s\n' "$s" "$now" >> "$tmp"
+  mv "$tmp" "$PLAYED"
+}
+
 build_list() {
-  : > "$LIST"
+  local tmp="$LIST.tmp"; : > "$tmp"
   for d in "$GAMES"/*/; do
     [ -f "${d}main.lua" ] || continue
-    local slug sub
+    local slug sub ts
     slug="$(basename "$d")"
     sub="$(git -C "$d" log -1 --format='%h  %cr' 2>/dev/null || echo '')"
-    printf '%s\t%s\t%s\n' "$slug" "${d%/}" "$sub" >> "$LIST"
+    ts="$(played_ts "$slug")"
+    printf '%s\t%s\t%s\t%s\n' "$ts" "$slug" "${d%/}" "$sub" >> "$tmp"
   done
+  # sort by last-played desc, then slug asc for never-played; drop the ts column
+  sort -t"$(printf '\t')" -k1,1nr -k2,2 "$tmp" | cut -f2- > "$LIST"
+  rm -f "$tmp"
 }
 
 ensure_runtime || true
@@ -95,6 +111,7 @@ while true; do
   case "${action:-QUIT}" in
     PLAY)
       note "launching $_slug"
+      record_played "$_slug"                # bump to top of the menu for next time
       "$LOVE" "$path" 2>/dev/null || true   # returns here when the game quits
       ;;
     SYNC) : ;;          # loop re-syncs

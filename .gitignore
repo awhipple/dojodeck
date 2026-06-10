@@ -4,5 +4,8 @@ runtime/
 # Games are cloned here at runtime from the manifest (each its own repo)
 games/
 
+# Per-device "last opened" state (drives the menu sort)
+lastplayed.tsv
+
 # OS cruft
 .DS_Store
