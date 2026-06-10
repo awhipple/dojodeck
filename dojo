@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# gamelab dojo — the SINGLE thing you add to Steam on the Deck.
+#
+# Loop: self-update -> sync every game in the manifest -> show the hub menu ->
+#       launch the picked game -> back to the menu. You never leave this app.
+#
+# Runs as a normal host process and uses a bundled LÖVE AppImage (no flatpak
+# sandbox), so reading game folders + git "just works". First run downloads and
+# extracts LÖVE once into ./runtime/.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+GAMES="$HERE/games"
+MANIFEST="$HERE/games.txt"
+RUNTIME="$HERE/runtime"
+LOVE="$RUNTIME/AppRun"
+LIST="/tmp/gamelab-dojo.list"
+OUT="/tmp/gamelab-dojo.out"
+
+LOVE_URL="https://github.com/love2d/love/releases/download/11.5/love-11.5-x86_64.AppImage"
+
+note() { printf '\033[36m[dojo]\033[0m %s\n' "$*"; }
+
+ensure_runtime() {
+  [ -x "$LOVE" ] && return 0
+  note "first run: fetching LÖVE 11.5 AppImage…"
+  local tmp="/tmp/love-dojo.AppImage"
+  curl -fL "$LOVE_URL" -o "$tmp" || { note "download failed (no network?)"; return 1; }
+  chmod +x "$tmp"
+  ( cd /tmp && rm -rf squashfs-root && "$tmp" --appimage-extract >/dev/null )
+  rm -rf "$RUNTIME"; mv /tmp/squashfs-root "$RUNTIME"
+  rm -f "$tmp"
+  note "LÖVE installed into runtime/"
+}
+
+sync_all() {
+  note "syncing…"
+  git -C "$HERE" pull --ff-only --quiet 2>/dev/null || true   # self-update the dojo
+  mkdir -p "$GAMES"
+  [ -f "$MANIFEST" ] || return 0
+  while IFS=$' \t' read -r slug url _; do
+    [ -z "${slug:-}" ] && continue
+    case "$slug" in \#*) continue ;; esac
+    if [ -d "$GAMES/$slug/.git" ]; then
+      git -C "$GAMES/$slug" pull --ff-only --quiet 2>/dev/null || note "  $slug: pull failed"
+    else
+      note "  cloning $slug…"
+      git clone --quiet "$url" "$GAMES/$slug" 2>/dev/null || note "  $slug: clone failed"
+    fi
+  done < "$MANIFEST"
+}
+
+build_list() {
+  : > "$LIST"
+  for d in "$GAMES"/*/; do
+    [ -f "${d}main.lua" ] || continue
+    local slug sub
+    slug="$(basename "$d")"
+    sub="$(git -C "$d" log -1 --format='%h  %cr' 2>/dev/null || echo '')"
+    printf '%s\t%s\t%s\n' "$slug" "${d%/}" "$sub" >> "$LIST"
+  done
+}
+
+ensure_runtime || true
+
+while true; do
+  sync_all
+  build_list
+  : > "$OUT"
+  "$LOVE" "$HERE/hub" --list "$LIST" --out "$OUT" 2>/dev/null || true
+
+  IFS=$'\t' read -r action _slug path < "$OUT" 2>/dev/null || action="QUIT"
+  case "${action:-QUIT}" in
+    PLAY)
+      note "launching $_slug"
+      "$LOVE" "$path" 2>/dev/null || true   # returns here when the game quits
+      ;;
+    SYNC) : ;;          # loop re-syncs
+    *)    break ;;       # QUIT / empty -> back to Steam
+  esac
+done

@@ -1,0 +1,8 @@
+# Bundled LÖVE runtime (downloaded + extracted on first launch)
+runtime/
+
+# Games are cloned here at runtime from the manifest (each its own repo)
+games/
+
+# OS cruft
+.DS_Store
