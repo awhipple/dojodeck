@@ -1,13 +1,15 @@
-# gamelab dojo (Steam Deck)
+# dojodeck (Steam Deck)
 
 One LÖVE app you add to Steam **once**. From Gaming Mode it self-updates, syncs
 every game in `games.txt`, shows a controller menu, and launches the one you pick
 — back to the menu when it exits. New games added on the dev box (via
-`tools/publish`) appear here automatically on the next launch. You never touch
+`tools/publish`) appear here automatically on the next launch. **It updates itself
+too** — pushing a new dojodeck feature (hub UI or launcher) ships the same way a
+new game does, and the launcher re-execs if its own file changed. You never touch
 Desktop Mode after setup.
 
 ```
-dojo            ← the launcher (this is the Steam shortcut target; a host script)
+dojodeck        ← the launcher (this is the Steam shortcut target; a host script)
 hub/            ← the LÖVE menu UI (main.lua, conf.lua)
 games.txt       ← manifest: "<slug> <git-url>" per line (the dev box pushes to this)
 runtime/        ← LÖVE AppImage, fetched+extracted on first run (gitignored)
@@ -23,20 +25,20 @@ games/          ← game repos, cloned here at runtime (gitignored)
    cat ~/.ssh/id_ed25519.pub
    ```
    Add that key at https://github.com/settings/keys (or as a deploy key per repo).
-3. **Clone the dojo:**
+3. **Clone dojodeck:**
    ```sh
-   git clone <this-dojo-repo-url> ~/gamelab-dojo
-   chmod +x ~/gamelab-dojo/dojo
+   git clone <dojodeck-repo-url> ~/dojodeck
+   chmod +x ~/dojodeck/dojodeck
    ```
 4. **First run from the terminal** (downloads LÖVE, syncs games, shows the menu):
    ```sh
-   ~/gamelab-dojo/dojo
+   ~/dojodeck/dojodeck
    ```
    Confirm the menu appears and a game launches. `Esc`/`B` quits.
 5. **Add to Steam:** in Steam (Desktop), *Games ▸ Add a Non-Steam Game to My
-   Library ▸ Browse* → pick `~/gamelab-dojo/dojo`. Rename it "gamelab dojo".
+   Library ▸ Browse* → pick `~/dojodeck/dojodeck`. Rename it "dojodeck".
    Optional: set a custom icon/artwork.
-6. **Back to Gaming Mode.** Launch "gamelab dojo" from your library — it runs
+6. **Back to Gaming Mode.** Launch "dojodeck" from your library — it runs
    fullscreen with the controller. That's the steady state.
 
 ## Controls

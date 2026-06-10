@@ -1,5 +1,5 @@
--- main.lua — the gamelab dojo HUB. The single thing Aaron adds to Steam.
--- It's a controller-navigable menu of games. The host wrapper (../dojo) syncs the
+-- main.lua — the dojodeck HUB. The single thing Aaron adds to Steam.
+-- It's a controller-navigable menu of games. The host wrapper (../dojodeck) syncs
 -- games, writes a list file, runs this hub, reads back the choice, and launches
 -- the picked game — then loops back here. So the hub only does UI:
 --   in : --list FILE   tab-separated rows "slug<TAB>path<TAB>subtitle"
@@ -9,7 +9,7 @@
 local VW, VH = 1280, 800
 local canvas
 
-local opt = { list = nil, out = nil, shot = nil, shotout = "/tmp/gamelab-dojo-shot.png", select = 1 }
+local opt = { list = nil, out = nil, shot = nil, shotout = "/tmp/dojodeck-shot.png", select = 1 }
 
 local items = {}        -- { {slug=, path=, sub=}, ... }
 local selected = 1
@@ -61,9 +61,9 @@ local function loadItems()
   -- demo fallback so the hub renders standalone (e.g. for a screenshot)
   if #items == 0 and not opt.list then
     items = {
-      { slug = "asteroids", path = "/home/deck/gamelab/games/asteroids", sub = "a1b2c3d  2 hours ago" },
-      { slug = "platformer", path = "/home/deck/gamelab/games/platformer", sub = "9f8e7d6  yesterday" },
-      { slug = "_smoke",    path = "/home/deck/gamelab/games/_smoke",    sub = "0011223  just now" },
+      { slug = "asteroids",  path = "/home/deck/dojodeck/games/asteroids",  sub = "a1b2c3d  2 hours ago" },
+      { slug = "platformer", path = "/home/deck/dojodeck/games/platformer", sub = "9f8e7d6  yesterday" },
+      { slug = "_smoke",     path = "/home/deck/dojodeck/games/_smoke",     sub = "0011223  just now" },
     }
   end
   selected = math.max(1, math.min(opt.select, math.max(1, #items)))
@@ -176,7 +176,7 @@ local function drawScene()
   love.graphics.setColor(C.accent); love.graphics.rectangle("fill", -16, -16, 32, 32, 5, 5)
   love.graphics.pop()
   love.graphics.setFont(font.title)
-  love.graphics.setColor(C.text); love.graphics.print("gamelab dojo", 120, 48)
+  love.graphics.setColor(C.text); love.graphics.print("dojodeck", 120, 48)
   love.graphics.setFont(font.sub)
   love.graphics.setColor(C.dim)
   local count = ("%d game%s synced"):format(#items, #items == 1 and "" or "s")

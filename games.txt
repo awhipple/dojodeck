@@ -1,6 +1,6 @@
-# gamelab dojo manifest — one game per line:  <slug> <git-url>
+# dojodeck manifest — one game per line:  <slug> <git-url>
 # `tools/publish <slug>` (on the dev box) appends a line here and pushes.
-# The Deck dojo clones/pulls each of these on launch. SSH URLs use the Deck's key.
+# dojodeck clones/pulls each of these on launch. SSH URLs use the Deck's key.
 #
 # example:
 #   asteroids git@github.com:awhipple/asteroids.git
