@@ -53,5 +53,9 @@ games/          ← game repos, cloned here at runtime (gitignored)
   shortcut's controller layout to "Gamepad" in Steam.
 - **AppImage**: extracted once (no FUSE needed). If `runtime/AppRun` is missing,
   delete `runtime/` and relaunch to re-fetch.
+- **Steam overlay preload**: Steam injects both 32- and 64-bit `gameoverlayrenderer.so`
+  via `LD_PRELOAD`; our 64-bit LÖVE can't load the 32-bit one, so `ld.so` would print
+  a `wrong ELF class: ELFCLASS32` warning (gamescope drew it over the screen). The
+  launcher strips the 32-bit preload entry up front (`sanitize_preload`) so it's gone.
 - The dev box never needs to be online when you play — games live on GitHub; the
   dojo pulls from there over HTTPS.

@@ -95,6 +95,25 @@ build_list() {
   rm -f "$tmp"
 }
 
+# Steam launches non-Steam shortcuts with LD_PRELOAD pointing at BOTH the 32- and
+# 64-bit gameoverlayrenderer.so. Our LÖVE is 64-bit, so ld.so can't load the 32-bit
+# one and spews "wrong ELF class: ELFCLASS32: ignored" — which gamescope draws over
+# the screen on load. Drop the 32-bit entries (keep any 64-bit ones) so it's silent.
+sanitize_preload() {
+  [ -n "${LD_PRELOAD:-}" ] || return 0
+  local cleaned="" p oldifs="$IFS"
+  IFS=': '
+  for p in $LD_PRELOAD; do
+    case "$p" in
+      ""|*ubuntu12_32*|*lib32*|*/i386*|*/32/*) ;;     # skip 32-bit preloads
+      *) cleaned="${cleaned:+$cleaned:}$p" ;;
+    esac
+  done
+  IFS="$oldifs"
+  export LD_PRELOAD="$cleaned"
+}
+sanitize_preload
+
 ensure_runtime || true
 
 # Full update happens ONCE, on launch: self-update (hub + launcher + manifest;
