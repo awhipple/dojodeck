@@ -97,11 +97,16 @@ build_list() {
 
 ensure_runtime || true
 
+# Full update happens ONCE, on launch: self-update (hub + launcher + manifest;
+# re-execs if the launcher changed) then pull every game. This is the slow part,
+# so we do NOT repeat it on every menu return — individual games are refreshed
+# in-place from the hub (Y = re-sync the highlighted game, with a spinner).
+note "launch sync…"
+self_update "$@"
+sync_games
+
 while true; do
-  note "syncing…"
-  self_update "$@"   # updates hub + launcher + manifest; re-execs if launcher changed
-  sync_games
-  build_list
+  build_list   # local-only: refresh commit lines + most-recently-played order (fast, no network)
 
   : > "$OUT"
   selfver="$(git -C "$HERE" log -1 --format='%h  %cr' 2>/dev/null || echo '')"
@@ -114,7 +119,7 @@ while true; do
       record_played "$_slug"                # bump to top of the menu for next time
       "$LOVE" "$path" 2>/dev/null || true   # returns here when the game quits
       ;;
-    SYNC) : ;;          # loop re-syncs
+    SYNC) : ;;          # legacy/no-op: the hub now pulls in-place, so just redraw
     *)    break ;;       # QUIT / empty -> back to Steam
   esac
 done

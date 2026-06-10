@@ -1,12 +1,16 @@
 # dojodeck (Steam Deck)
 
-One LÖVE app you add to Steam **once**. From Gaming Mode it self-updates, syncs
-every game in `games.txt`, shows a controller menu, and launches the one you pick
-— back to the menu when it exits. New games added on the dev box (via
-`tools/publish`) appear here automatically on the next launch. **It updates itself
-too** — pushing a new dojodeck feature (hub UI or launcher) ships the same way a
-new game does, and the launcher re-execs if its own file changed. You never touch
-Desktop Mode after setup.
+One LÖVE app you add to Steam **once**. **On launch** it self-updates and pulls
+every game in `games.txt` (the slow part — done once, not on every menu return),
+then shows a controller menu and launches the one you pick — back to the menu when
+it exits. New games added on the dev box (via `tools/publish`) appear on the next
+launch. **It updates itself too** — pushing a new dojodeck feature ships like a new
+game, and the launcher re-execs if its own file changed.
+
+To refresh a single game without restarting, highlight it and press **Y (re-sync
+this)**: the hub pulls just that game **in-place** — the menu stays on screen with a
+spinner (no blackout), and launching is disabled until the pull finishes. You never
+touch Desktop Mode after setup.
 
 ```
 dojodeck        ← the launcher (this is the Steam shortcut target; a host script)
@@ -40,7 +44,8 @@ games/          ← game repos, cloned here at runtime (gitignored)
 > the Deck for that repo.
 
 ## Controls
-`A`/Enter play · D-pad or stick select · `Y`/`R` re-sync · `B`/Esc quit
+`A`/Enter play · D-pad or stick select · `Y`/`R` re-sync the highlighted game
+(in-place, with a spinner) · `B`/Esc quit
 
 ## Notes / things to verify on real hardware
 - **Steam Input**: non-Steam games get a virtual gamepad by default; LÖVE reads it

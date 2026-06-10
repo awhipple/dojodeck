@@ -1,21 +1,45 @@
 -- main.lua — the dojodeck HUB. The single thing Aaron adds to Steam.
--- It's a controller-navigable menu of games. The host wrapper (../dojodeck) syncs
--- games, writes a list file, runs this hub, reads back the choice, and launches
--- the picked game — then loops back here. So the hub only does UI:
+-- It's a controller-navigable menu of games. The host wrapper (../dojodeck) does the
+-- one-time launch sync (self-update + pull every game), writes a list file, runs this
+-- hub, reads back the choice, and launches the picked game — then loops back here.
 --   in : --list FILE   tab-separated rows "slug<TAB>path<TAB>subtitle"
---   out: --out  FILE   one line: "PLAY<TAB>slug<TAB>path" | "SYNC" | "QUIT"
+--   out: --out  FILE   one line: "PLAY<TAB>slug<TAB>path" | "QUIT"
+--
+-- Re-sync (Y) pulls ONLY the highlighted game, in-process and asynchronously (a
+-- love.thread runs git), so the menu stays on screen with a spinner instead of
+-- blacking out. Launching is disabled while a pull is in progress.
 -- Self-test: --shot N --shotout PATH captures a frame and exits (run natively).
+--            --demo-pull forces the spinner overlay on (for that screenshot).
 
 local VW, VH = 1280, 800
 local canvas
 
-local opt = { list = nil, out = nil, shot = nil, shotout = "/tmp/dojodeck-shot.png", select = 1, ver = nil }
+local opt = { list = nil, out = nil, shot = nil, shotout = "/tmp/dojodeck-shot.png",
+              select = 1, ver = nil, demopull = false }
 
 local items = {}        -- { {slug=, path=, sub=}, ... }
 local selected = 1
 local result = "QUIT"   -- what we tell the wrapper if the window is just closed
 local frame = 0
 local captured = false
+
+-- in-process per-game pull state
+local pull = { active = false, t = 0, status = nil, thread = nil, index = nil, demo = false }
+
+-- thread body: pull one repo, then read back its short commit line. Args via ...
+local PULL_SRC = [[
+  local path = ...
+  local function sh(cmd)
+    local p = io.popen(cmd .. " 2>&1")
+    local out = p and p:read("*a") or ""
+    if p then p:close() end
+    return out
+  end
+  sh("git -C '" .. path .. "' pull --ff-only")
+  local sub = sh("git -C '" .. path .. "' log -1 --format='%h  %cr'")
+  sub = (sub or ""):gsub("%s+$", "")
+  love.thread.getChannel("pull_result"):push(sub)
+]]
 
 -- palette
 local C = {
@@ -35,12 +59,13 @@ local function parseArgs()
   local i, n = 1, #a
   while i <= n do
     local t = tostring(a[i])
-    if     t == "--list"    then i = i + 1; opt.list = a[i]
-    elseif t == "--out"     then i = i + 1; opt.out = a[i]
-    elseif t == "--shot"    then i = i + 1; opt.shot = tonumber(a[i])
-    elseif t == "--shotout" then i = i + 1; opt.shotout = a[i]
-    elseif t == "--select"  then i = i + 1; opt.select = tonumber(a[i]) or 1
-    elseif t == "--version" then i = i + 1; opt.ver = a[i]
+    if     t == "--list"      then i = i + 1; opt.list = a[i]
+    elseif t == "--out"       then i = i + 1; opt.out = a[i]
+    elseif t == "--shot"      then i = i + 1; opt.shot = tonumber(a[i])
+    elseif t == "--shotout"   then i = i + 1; opt.shotout = a[i]
+    elseif t == "--select"    then i = i + 1; opt.select = tonumber(a[i]) or 1
+    elseif t == "--version"   then i = i + 1; opt.ver = a[i]
+    elseif t == "--demo-pull" then opt.demopull = true
     end
     i = i + 1
   end
@@ -90,16 +115,30 @@ local function move(d)
 end
 
 local function choosePlay()
+  if pull.active then return end                 -- no launching while a pull runs
   if #items > 0 then result = "PLAY"; writeResult(); love.event.quit() end
 end
-local function chooseSync() result = "SYNC"; writeResult(); love.event.quit() end
 local function chooseQuit() result = "QUIT"; writeResult(); love.event.quit() end
+
+-- kick off an async pull of the highlighted game only
+local function startPull()
+  if pull.active or #items == 0 then return end
+  local it = items[selected]
+  if not it or not it.path or it.path == "" then return end
+  while love.thread.getChannel("pull_result"):pop() do end   -- drain stale
+  pull.thread = love.thread.newThread(PULL_SRC)
+  pull.thread:start(it.path)
+  pull.active = true
+  pull.index  = selected
+  pull.t      = 0
+  pull.status = "Updating  " .. it.slug .. "…"
+end
 
 function love.keypressed(key)
   if     key == "up"     or key == "w" then move(-1)
   elseif key == "down"   or key == "s" then move(1)
   elseif key == "return" or key == "space" then choosePlay()
-  elseif key == "r"      then chooseSync()
+  elseif key == "r"      then startPull()
   elseif key == "escape" or key == "q" then chooseQuit()
   end
 end
@@ -108,7 +147,7 @@ function love.gamepadpressed(_, button)
   if     button == "dpup"   then move(-1)
   elseif button == "dpdown" then move(1)
   elseif button == "a" or button == "start" then choosePlay()
-  elseif button == "y" then chooseSync()
+  elseif button == "y" then startPull()
   elseif button == "b" or button == "back" then chooseQuit()
   end
 end
@@ -135,10 +174,27 @@ function love.load()
   font.sub   = love.graphics.newFont(18)
   font.hint  = love.graphics.newFont(20)
   loadItems()
+  if opt.demopull and #items > 0 then          -- screenshot aid: force the overlay
+    pull.active = true; pull.demo = true
+    pull.status = "Updating  " .. items[selected].slug .. "…"
+  end
 end
 
 function love.update(dt)
   pollStick(dt)
+  if pull.active then
+    pull.t = pull.t + dt
+    if not pull.demo then
+      local res = love.thread.getChannel("pull_result"):pop()
+      if res ~= nil then
+        if pull.index and items[pull.index] and res ~= "" then
+          items[pull.index].sub = res
+        end
+        pull.active = false
+        pull.thread = nil
+      end
+    end
+  end
   if opt.shot then
     frame = frame + 1
     if frame >= opt.shot and captured then love.event.quit() end
@@ -204,7 +260,11 @@ local function drawScene()
     love.graphics.setFont(font.row)
     love.graphics.setColor(i == selected and C.text or C.dim)
     love.graphics.print(it.slug, x + 36, y + 14)
-    if it.sub ~= "" then
+    -- pulling marker on the row being updated
+    if pull.active and pull.index == i then
+      love.graphics.setFont(font.sub); love.graphics.setColor(C.accent)
+      love.graphics.print("updating…", x + 36 + font.row:getWidth(it.slug) + 20, y + 24)
+    elseif it.sub ~= "" then
       love.graphics.setFont(font.sub)
       love.graphics.setColor(C.dim)
       love.graphics.printf(it.sub, x, y + 24, w - 36, "right")
@@ -222,7 +282,7 @@ local function drawScene()
   end
   hint(function(x, y) return pill(x, y, "A") end, "play")
   hint(selectPill, "select")
-  hint(function(x, y) return pill(x, y, "Y") end, "re-sync")
+  hint(function(x, y) return pill(x, y, "Y") end, "re-sync this")
   hint(function(x, y) return pill(x, y, "B") end, "quit")
 
   -- dojodeck's own version, tucked in the corner (same info games show)
@@ -233,10 +293,36 @@ local function drawScene()
   end
 end
 
+-- non-blocking overlay: dim (not blackout) + spinner + status while a pull runs
+local function drawPullOverlay()
+  love.graphics.setColor(0, 0, 0, 0.55)
+  love.graphics.rectangle("fill", 0, 0, VW, VH)
+  local pw, ph = 520, 160
+  local px, py = (VW - pw) / 2, (VH - ph) / 2
+  love.graphics.setColor(C.panel); love.graphics.rectangle("fill", px, py, pw, ph, 16, 16)
+  love.graphics.setColor(C.sel); love.graphics.setLineWidth(2)
+  love.graphics.rectangle("line", px, py, pw, ph, 16, 16)
+
+  -- spinner: a track ring + a rotating accent arc
+  local cx, cy, r = px + 64, py + ph / 2, 28
+  local a = pull.t * 6
+  love.graphics.setLineWidth(7)
+  love.graphics.setColor(C.dim[1], C.dim[2], C.dim[3], 0.35)
+  love.graphics.circle("line", cx, cy, r)
+  love.graphics.setColor(C.accent)
+  love.graphics.arc("line", "open", cx, cy, r, a, a + math.pi * 1.25)
+
+  love.graphics.setFont(font.row); love.graphics.setColor(C.text)
+  love.graphics.print(pull.status or "Updating…", px + 116, py + ph / 2 - 28)
+  love.graphics.setFont(font.sub); love.graphics.setColor(C.dim)
+  love.graphics.print("pulling latest — launching is disabled", px + 116, py + ph / 2 + 10)
+end
+
 function love.draw()
   love.graphics.setCanvas(canvas)
   love.graphics.push("all"); love.graphics.origin()
   drawScene()
+  if pull.active then drawPullOverlay() end
   love.graphics.pop(); love.graphics.setCanvas()
 
   local ww, wh = love.graphics.getDimensions()
