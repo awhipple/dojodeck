@@ -174,9 +174,8 @@ function love.load()
   font.sub   = love.graphics.newFont(18)
   font.hint  = love.graphics.newFont(20)
   loadItems()
-  if opt.demopull and #items > 0 then          -- screenshot aid: force the overlay
-    pull.active = true; pull.demo = true
-    pull.status = "Updating  " .. items[selected].slug .. "…"
+  if opt.demopull and #items > 0 then          -- screenshot aid: force the spinner on
+    pull.active = true; pull.demo = true; pull.index = selected
   end
 end
 
@@ -260,10 +259,20 @@ local function drawScene()
     love.graphics.setFont(font.row)
     love.graphics.setColor(i == selected and C.text or C.dim)
     love.graphics.print(it.slug, x + 36, y + 14)
-    -- pulling marker on the row being updated
+    -- pulling marker on the row being updated: a small inline spinner + label,
+    -- right where the commit line normally sits (no separate modal).
     if pull.active and pull.index == i then
+      local cy = y + (rowH - 14) / 2
+      local cx = x + w - 46
       love.graphics.setFont(font.sub); love.graphics.setColor(C.accent)
-      love.graphics.print("updating…", x + 36 + font.row:getWidth(it.slug) + 20, y + 24)
+      local label = "updating"
+      love.graphics.print(label, cx - 22 - font.sub:getWidth(label), cy - 10)
+      local a = pull.t * 6
+      love.graphics.setLineWidth(4)
+      love.graphics.setColor(C.dim[1], C.dim[2], C.dim[3], 0.35)
+      love.graphics.circle("line", cx, cy, 13)
+      love.graphics.setColor(C.accent)
+      love.graphics.arc("line", "open", cx, cy, 13, a, a + math.pi * 1.25)
     elseif it.sub ~= "" then
       love.graphics.setFont(font.sub)
       love.graphics.setColor(C.dim)
@@ -293,36 +302,10 @@ local function drawScene()
   end
 end
 
--- non-blocking overlay: dim (not blackout) + spinner + status while a pull runs
-local function drawPullOverlay()
-  love.graphics.setColor(0, 0, 0, 0.55)
-  love.graphics.rectangle("fill", 0, 0, VW, VH)
-  local pw, ph = 520, 160
-  local px, py = (VW - pw) / 2, (VH - ph) / 2
-  love.graphics.setColor(C.panel); love.graphics.rectangle("fill", px, py, pw, ph, 16, 16)
-  love.graphics.setColor(C.sel); love.graphics.setLineWidth(2)
-  love.graphics.rectangle("line", px, py, pw, ph, 16, 16)
-
-  -- spinner: a track ring + a rotating accent arc
-  local cx, cy, r = px + 64, py + ph / 2, 28
-  local a = pull.t * 6
-  love.graphics.setLineWidth(7)
-  love.graphics.setColor(C.dim[1], C.dim[2], C.dim[3], 0.35)
-  love.graphics.circle("line", cx, cy, r)
-  love.graphics.setColor(C.accent)
-  love.graphics.arc("line", "open", cx, cy, r, a, a + math.pi * 1.25)
-
-  love.graphics.setFont(font.row); love.graphics.setColor(C.text)
-  love.graphics.print(pull.status or "Updating…", px + 116, py + ph / 2 - 28)
-  love.graphics.setFont(font.sub); love.graphics.setColor(C.dim)
-  love.graphics.print("pulling latest — launching is disabled", px + 116, py + ph / 2 + 10)
-end
-
 function love.draw()
   love.graphics.setCanvas(canvas)
   love.graphics.push("all"); love.graphics.origin()
   drawScene()
-  if pull.active then drawPullOverlay() end
   love.graphics.pop(); love.graphics.setCanvas()
 
   local ww, wh = love.graphics.getDimensions()
