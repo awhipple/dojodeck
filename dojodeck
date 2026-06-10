@@ -88,7 +88,8 @@ while true; do
   build_list
 
   : > "$OUT"
-  "$LOVE" "$HERE/hub" --list "$LIST" --out "$OUT" 2>/dev/null || true
+  selfver="$(git -C "$HERE" log -1 --format='%h  %cr' 2>/dev/null || echo '')"
+  "$LOVE" "$HERE/hub" --list "$LIST" --out "$OUT" --version "$selfver" 2>/dev/null || true
 
   IFS=$'\t' read -r action _slug path < "$OUT" 2>/dev/null || action="QUIT"
   case "${action:-QUIT}" in

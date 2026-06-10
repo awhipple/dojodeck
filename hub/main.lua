@@ -9,7 +9,7 @@
 local VW, VH = 1280, 800
 local canvas
 
-local opt = { list = nil, out = nil, shot = nil, shotout = "/tmp/dojodeck-shot.png", select = 1 }
+local opt = { list = nil, out = nil, shot = nil, shotout = "/tmp/dojodeck-shot.png", select = 1, ver = nil }
 
 local items = {}        -- { {slug=, path=, sub=}, ... }
 local selected = 1
@@ -40,6 +40,7 @@ local function parseArgs()
     elseif t == "--shot"    then i = i + 1; opt.shot = tonumber(a[i])
     elseif t == "--shotout" then i = i + 1; opt.shotout = a[i]
     elseif t == "--select"  then i = i + 1; opt.select = tonumber(a[i]) or 1
+    elseif t == "--version" then i = i + 1; opt.ver = a[i]
     end
     i = i + 1
   end
@@ -65,6 +66,7 @@ local function loadItems()
       { slug = "platformer", path = "/home/deck/dojodeck/games/platformer", sub = "9f8e7d6  yesterday" },
       { slug = "_smoke",     path = "/home/deck/dojodeck/games/_smoke",     sub = "0011223  just now" },
     }
+    opt.ver = opt.ver or "edb6600  5 minutes ago"
   end
   selected = math.max(1, math.min(opt.select, math.max(1, #items)))
 end
@@ -222,6 +224,13 @@ local function drawScene()
   hint(selectPill, "select")
   hint(function(x, y) return pill(x, y, "Y") end, "re-sync")
   hint(function(x, y) return pill(x, y, "B") end, "quit")
+
+  -- dojodeck's own version, tucked in the corner (same info games show)
+  if opt.ver and opt.ver ~= "" then
+    love.graphics.setFont(font.sub)
+    love.graphics.setColor(C.dim[1], C.dim[2], C.dim[3], 0.55)
+    love.graphics.printf("dojodeck " .. opt.ver, VW - 620, VH - 50, 600, "right")
+  end
 end
 
 function love.draw()
