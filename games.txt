@@ -5,3 +5,4 @@
 # example:
 #   asteroids https://github.com/awhipple/asteroids.git
 bouncer https://github.com/awhipple/bouncer.git
+jumpman https://github.com/awhipple/jumpman.git
