@@ -114,6 +114,15 @@ sanitize_preload() {
 }
 sanitize_preload
 
+# Single instance: if dojodeck is already running, don't start a second copy (two
+# launchers could each spawn a game → duplicates). Skip on self-update re-exec,
+# which keeps fd 9 (and thus the lock) open across exec.
+LOCK="$HERE/.dojodeck.lock"
+if [ "${DOJODECK_REEXECS:-0}" = "0" ] && command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCK"
+  flock -n 9 || { note "dojodeck is already running — exiting this instance"; exit 0; }
+fi
+
 ensure_runtime || true
 
 # Full update happens ONCE, on launch: self-update (hub + launcher + manifest;
@@ -134,9 +143,16 @@ while true; do
   IFS=$'\t' read -r action _slug path < "$OUT" 2>/dev/null || action="QUIT"
   case "${action:-QUIT}" in
     PLAY)
+      # One game at a time. Kill any stray game process, let the launch button
+      # physically release (so it doesn't bleed into the game as a quit), then run
+      # the game in the FOREGROUND — this blocks until it exits, so the menu can
+      # never reappear or launch a second copy while a game is running.
+      pkill -f "$GAMES/" 2>/dev/null || true
+      sleep 0.3
       note "launching $_slug"
       record_played "$_slug"                # bump to top of the menu for next time
-      "$LOVE" "$path" 2>/dev/null || true   # returns here when the game quits
+      "$LOVE" "$path" 2>/dev/null || true   # returns here only when the game quits
+      sleep 0.3                             # settle so a held quit doesn't re-trigger
       ;;
     SYNC) : ;;          # legacy/no-op: the hub now pulls in-place, so just redraw
     *)    break ;;       # QUIT / empty -> back to Steam

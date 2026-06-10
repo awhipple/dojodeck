@@ -146,7 +146,9 @@ end
 function love.gamepadpressed(_, button)
   if     button == "dpup"   then move(-1)
   elseif button == "dpdown" then move(1)
-  elseif button == "a" or button == "start" then choosePlay()
+  -- launch on A only: Start is the games' quit button, so launching with Start
+  -- used to bleed straight into the game and snap it shut.
+  elseif button == "a" then choosePlay()
   elseif button == "y" then startPull()
   elseif button == "b" or button == "back" then chooseQuit()
   end
