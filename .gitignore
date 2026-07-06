@@ -7,6 +7,10 @@ games/
 # Per-device "last opened" state (drives the menu sort)
 lastplayed.tsv
 
+# Dev channel: the hand-entered token + the .love working-tree snapshots it pulls
+devtoken
+devgames/
+
 # Single-instance lock (runtime)
 .dojodeck.lock
 

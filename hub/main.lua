@@ -2,12 +2,14 @@
 -- It's a controller-navigable menu of games. The host wrapper (../dojodeck) does the
 -- one-time launch sync (self-update + pull every game), writes a list file, runs this
 -- hub, reads back the choice, and launches the picked game — then loops back here.
---   in : --list FILE   tab-separated rows "slug<TAB>path<TAB>subtitle"
+--   in : --list FILE   tab-separated rows "slug<TAB>path<TAB>subtitle[<TAB>devurl]"
+--                      (a non-empty 4th column marks a dev-channel row: path is a
+--                      .love and devurl re-downloads it from the dojo)
 --   out: --out  FILE   one line: "PLAY<TAB>slug<TAB>path" | "QUIT"
 --
--- Re-sync (Y) pulls ONLY the highlighted game, in-process and asynchronously (a
--- love.thread runs git), so the menu stays on screen with a spinner instead of
--- blacking out. Launching is disabled while a pull is in progress.
+-- Re-sync (Y) refreshes ONLY the highlighted game, in-process and asynchronously
+-- (a love.thread runs git — or curl for a dev row), so the menu stays on screen
+-- with a spinner instead of blacking out. Launching is disabled while it runs.
 -- Self-test: --shot N --shotout PATH captures a frame and exits (run natively).
 --            --demo-pull forces the spinner overlay on (for that screenshot).
 
@@ -26,18 +28,34 @@ local captured = false
 -- in-process per-game pull state
 local pull = { active = false, t = 0, status = nil, thread = nil, index = nil, demo = false }
 
--- thread body: pull one repo, then read back its short commit line. Args via ...
+-- thread body: refresh one game, then push the new subtitle. Args via ...
+-- Git row: pull the repo, read back its short commit line. Dev row (devurl
+-- non-empty): curl the fresh .love from the dojo into place (download to .tmp
+-- then mv, so a failed transfer never clobbers a playable copy).
 local PULL_SRC = [[
-  local path = ...
+  local path, devurl = ...
   local function sh(cmd)
     local p = io.popen(cmd .. " 2>&1")
     local out = p and p:read("*a") or ""
     if p then p:close() end
     return out
   end
-  sh("git -C '" .. path .. "' pull --ff-only")
-  local sub = sh("git -C '" .. path .. "' log -1 --format='%h  %cr'")
-  sub = (sub or ""):gsub("%s+$", "")
+  local sub
+  if devurl and devurl ~= "" then
+    -- os.execute returns 0/true on success (LuaJIT 5.1 vs 5.2+ semantics)
+    local ok = os.execute("curl -fsS --max-time 60 '" .. devurl .. "' -o '" .. path .. ".tmp'")
+    if ok == 0 or ok == true then
+      os.execute("mv '" .. path .. ".tmp' '" .. path .. "'")
+      sub = "dev · synced just now"
+    else
+      os.execute("rm -f '" .. path .. ".tmp'")
+      sub = "dev · sync failed (offline?)"
+    end
+  else
+    sh("git -C '" .. path .. "' pull --ff-only")
+    sub = sh("git -C '" .. path .. "' log -1 --format='%h  %cr'")
+    sub = (sub or ""):gsub("%s+$", "")
+  end
   love.thread.getChannel("pull_result"):push(sub)
 ]]
 
@@ -76,9 +94,10 @@ local function loadItems()
     local f = io.open(opt.list, "r")
     if f then
       for line in f:lines() do
-        local slug, path, sub = line:match("^([^\t]*)\t([^\t]*)\t?(.*)$")
+        local slug, path, sub, dev =
+          line:match("^([^\t]*)\t([^\t]*)\t?([^\t]*)\t?(.*)$")
         if slug and slug ~= "" then
-          items[#items + 1] = { slug = slug, path = path, sub = sub or "" }
+          items[#items + 1] = { slug = slug, path = path, sub = sub or "", dev = dev or "" }
         end
       end
       f:close()
@@ -127,7 +146,7 @@ local function startPull()
   if not it or not it.path or it.path == "" then return end
   while love.thread.getChannel("pull_result"):pop() do end   -- drain stale
   pull.thread = love.thread.newThread(PULL_SRC)
-  pull.thread:start(it.path)
+  pull.thread:start(it.path, it.dev or "")
   pull.active = true
   pull.index  = selected
   pull.t      = 0

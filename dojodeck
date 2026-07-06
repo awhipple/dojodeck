@@ -20,6 +20,17 @@ GAMES="$HERE/games"
 MANIFEST="$HERE/games.txt"
 RUNTIME="$HERE/runtime"
 LOVE="$RUNTIME/AppRun"
+
+# Dev channel (optional). With a token hand-entered into ./devtoken (shown on
+# the dojo's /admin/apps page), every launch ALSO pulls the LIVE working tree
+# of each gamelab game from the dojo as a ready-to-run .love — no commit, no
+# push. Dev copies live in ./devgames and show as "<slug> (dev)" menu rows;
+# Y re-downloads one in place. Publishing to everyone still goes through git.
+DEVGAMES="$HERE/devgames"
+DEVTOKEN_FILE="$HERE/devtoken"
+DEVINDEX="$DEVGAMES/index.tsv"     # slug<TAB>subtitle, as served at launch sync
+DEV_BASE="${DOJODECK_DEV_URL:-https://api.whipple.ninja}"
+
 LIST="/tmp/dojodeck.list"
 OUT="/tmp/dojodeck.out"
 PLAYED="$HERE/lastplayed.tsv"   # slug<TAB>epoch, most-recent-first menu sort
@@ -69,6 +80,49 @@ sync_games() {
   done < "$MANIFEST"
 }
 
+dev_token() {  # echo the trimmed dev-channel token, or nothing
+  [ -s "$DEVTOKEN_FILE" ] || return 0
+  tr -d ' \t\r\n' < "$DEVTOKEN_FILE"
+}
+
+# Dev channel: fetch the dojo's list of live working trees and download each as
+# a .love into devgames/. Soft-fail (offline / server down / bad token → keep
+# whatever local copies exist). Games the server no longer lists are dropped.
+sync_dev_games() {
+  local tok; tok="$(dev_token)"
+  [ -n "$tok" ] || return 0
+  mkdir -p "$DEVGAMES"
+  local list
+  if ! list="$(curl -fsS --max-time 15 "$DEV_BASE/$tok/api/deck/games")"; then
+    note "dev channel: can't reach the dojo — keeping local dev copies"
+    return 0
+  fi
+  : > "$DEVINDEX.tmp"
+  local slug sub
+  while IFS=$'\t' read -r slug sub; do
+    [ -n "${slug:-}" ] || continue
+    case "$slug" in *[!a-zA-Z0-9_-]*) continue ;; esac    # server slugs are plain names
+    note "  dev-pulling $slug…"
+    if curl -fsS --max-time 60 "$DEV_BASE/$tok/api/deck/game/$slug.love" \
+         -o "$DEVGAMES/$slug.love.tmp"; then
+      mv "$DEVGAMES/$slug.love.tmp" "$DEVGAMES/$slug.love"
+      printf '%s\t%s\n' "$slug" "$sub" >> "$DEVINDEX.tmp"
+    else
+      rm -f "$DEVGAMES/$slug.love.tmp"
+      note "  $slug: dev pull failed"
+      # keep an existing copy in the menu rather than hiding it
+      [ -f "$DEVGAMES/$slug.love" ] && printf '%s\t%s\n' "$slug" "${sub:-dev}" >> "$DEVINDEX.tmp"
+    fi
+  done <<< "$list"
+  mv "$DEVINDEX.tmp" "$DEVINDEX"
+  local f base
+  for f in "$DEVGAMES"/*.love; do
+    [ -f "$f" ] || continue
+    base="$(basename "$f" .love)"
+    awk -F'\t' -v s="$base" '$1==s{found=1} END{exit !found}' "$DEVINDEX" || rm -f "$f"
+  done
+}
+
 # last-opened bookkeeping (so the menu sorts most-recently-played first)
 played_ts() {  # echo epoch for a slug, or 0
   awk -F'\t' -v s="$1" '$1==s{v=$2} END{print v+0}' "$PLAYED" 2>/dev/null || echo 0
@@ -90,6 +144,19 @@ build_list() {
     ts="$(played_ts "$slug")"
     printf '%s\t%s\t%s\t%s\n' "$ts" "$slug" "${d%/}" "$sub" >> "$tmp"
   done
+  # Dev-channel rows: a 5th column carries the re-download URL, which is what
+  # makes the hub's Y re-sync curl instead of git-pull for these.
+  local tok; tok="$(dev_token)"
+  if [ -n "$tok" ] && [ -f "$DEVINDEX" ]; then
+    local dslug dsub dlove dts
+    while IFS=$'\t' read -r dslug dsub; do
+      dlove="$DEVGAMES/$dslug.love"
+      [ -f "$dlove" ] || continue
+      dts="$(played_ts "$dslug (dev)")"
+      printf '%s\t%s\t%s\t%s\t%s\n' "$dts" "$dslug (dev)" "$dlove" "$dsub" \
+        "$DEV_BASE/$tok/api/deck/game/$dslug.love" >> "$tmp"
+    done < "$DEVINDEX"
+  fi
   # sort by last-played desc, then slug asc for never-played; drop the ts column
   sort -t"$(printf '\t')" -k1,1nr -k2,2 "$tmp" | cut -f2- > "$LIST"
   rm -f "$tmp"
@@ -132,6 +199,7 @@ ensure_runtime || true
 note "launch sync…"
 self_update "$@"
 sync_games
+sync_dev_games
 
 while true; do
   build_list   # local-only: refresh commit lines + most-recently-played order (fast, no network)
@@ -148,6 +216,7 @@ while true; do
       # the game in the FOREGROUND — this blocks until it exits, so the menu can
       # never reappear or launch a second copy while a game is running.
       pkill -f "$GAMES/" 2>/dev/null || true
+      pkill -f "$DEVGAMES/" 2>/dev/null || true
       sleep 0.3
       note "launching $_slug"
       record_played "$_slug"                # bump to top of the menu for next time
